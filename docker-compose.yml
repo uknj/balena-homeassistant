@@ -9,7 +9,7 @@ services:
   homeassistant:
     build: homeassistant
     ports:
-      - 80:8123
+      - 8080:8123
     privileged: true
     volumes:
       - 'config:/config'
