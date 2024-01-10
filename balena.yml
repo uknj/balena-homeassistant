@@ -1,23 +1,38 @@
-name: Home Assistant
-description: >-
-  Open source home automation that puts local control and privacy first; a Home
-  Assistant, HASS Config, and MQTT stack.
-type: sw.application
+name: "Pi-hole + HA"
+type: "sw.application"
+version: 2024.1.0
+description: "Pi-hole is a Linux network-level advertisement and Internet tracker blocking application! Now with HomeAssistant."
+post-provisioning: >-
+  ## Usage instructions
+  
+  Once your device joins the fleet you'll need to allow some time for it to download the application and download blocklists.
+  
+  When it's done you should be able to access the access the app at http://pihole.local with a default password of `balena`.
+
+  On your router or DHCP server assign a static IP reservation (if possible) to your Pi-hole device, and set your clients DNS to the same IP address.
+  
+  Documentation for Pi-hole can be found at https://docs.pi-hole.net/
 assets:
   repository:
-    type: blob.asset
+    type: "blob.asset"
     data:
-      url: 'https://github.com/balena-io-experimental/balena-homeassistant'
+      url: "https://github.com/uknj/balena-homeassistant"
   logo:
-    type: blob.asset
+    type: "blob.asset"
     data:
-      url: >-
-        https://raw.githubusercontent.com/balena-io-experimental/balena-homeassistant/master/logo.png
+      url: "https://raw.githubusercontent.com/klutchell/balena-pihole/main/logo.png"
 data:
-  defaultDeviceType: raspberrypi3
+  applicationConfigVariables:
+    - BALENA_HOST_CONFIG_gpu_mem: 64
+  applicationEnvironmentVariables:
+    - WEBPASSWORD: 'balena'
+    - PIHOLE_DNS_: '1.1.1.1;1.0.0.1'
+    - FBCP_DISPLAY: ""
+  defaultDeviceType: "raspberrypi3"
   supportedDeviceTypes:
-    - raspberrypi3
-    - raspberrypi4-64
-    - fincm3
-    - beaglebone-black
-version: 0.0.4
+    - "raspberry-pi2"
+    - "raspberrypi3"
+    - "raspberrypi3-64"
+    - "raspberrypi4-64"
+    - "fincm3"
+    - "nanopi-neo-air"
