@@ -1,35 +1,189 @@
 version: '2.1'
 volumes:
-  config:
+  config: {}
   mosquitto:
   pihole_config: {}
   dnsmasq_config: {}
   tailscale: {}
+  influxdb-data: {}
+  influxdb-config: {}
+  grafana: {}
+  mqtt: {}
+  zigbee2mqtt: {}
+  duplicati: {}
+  frigate-config: {}
+  frigate-media: {}
+  wyze-tokens: {}
+  netdatalib: {}
+  netdatacache: {}
+  esphome: {}
+  matter-server: {}
 services:
+    # https://hub.docker.com/r/homeassistant/home-assistant
   homeassistant:
-    build: homeassistant
+    image: homeassistant/home-assistant:2024.12.5@sha256:132ef461504be5c5ebd6e34e5d3fb3d7958bb6758a5136107eea9f84c299254a
     ports:
       - 8080:8123
-    privileged: true
+    network_mode: host
     volumes:
-      - 'config:/config'
-    restart: always
+      - config:/config
+    labels:
+      io.balena.features.dbus: "1"
+    environment:
+      DBUS_SYSTEM_BUS_ADDRESS: unix:path=/host/run/dbus/system_bus_socket
+    privileged: true
+
+  # https://hub.docker.com/_/eclipse-mosquitto
   mqtt:
     build: mqtt
     ports:
-      - "1883:1883"
-    restart: always
+      - 1883:1883
     volumes:
-      - mosquitto:/mosquitto/data
-  hass-configurator:
-    image: "causticlab/hass-configurator-docker:latest"
-    restart: always
+      - mqtt:/mosquitto/data
+    tmpfs:
+      - /mosquitto/log
+
+  # https://esphome.io/guides/getting_started_command_line.html#installation
+  esphome:
+    image: ghcr.io/esphome/esphome:2024.12.2@sha256:ce313b07edc3d0bde937ce23821b5e0476dcc1cfb62456bef7a6f79b8109f678
+    volumes:
+      - esphome:/config
+    privileged: true
+    network_mode: host
+
+  # https://www.zigbee2mqtt.io/guide/getting-started/#installation
+  zigbee2mqtt:
+    build: zigbee2mqtt
+    volumes:
+      - zigbee2mqtt:/app/data
     ports:
-      - "3218:3218"
+      - 7000:7000
+    privileged: true
+
+  # https://hub.docker.com/r/codercom/code-server
+  code-server:
+    image: codercom/code-server:4.96.2@sha256:6b8c0e944caec80057e71d2c2f352cee38fe00ae4b7515fc4458eb300844f699
+    command:
+      - --port=9000
+      - --auth=none
+      - --extensions-dir=/config/.vscode
+      - --user-data-dir=/config/.vscode
+      - /config
+    working_dir: /config
+    ports:
+      - 9000:9000/tcp
     volumes:
-      - 'config:/hass-config'
+      - config:/config
+      - zigbee2mqtt:/config/zigbee2mqtt
+      - esphome:/config/esphome
+      - frigate-config:/config/frigate
+    user: root
+
+  # https://hub.docker.com/_/influxdb
+  # https://www.home-assistant.io/integrations/influxdb/
+  influxdb:
+    image: influxdb:2.7.11-alpine@sha256:0abb5192f5d03a926995a57d8ada705021872cf2e3c398e23f09a524b1e972c0
     environment:
-      - HC_BASEPATH=/hass-config
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: homeassistant
+      DOCKER_INFLUXDB_INIT_PASSWORD: homeassistant # changeme via fleet/device env vars
+      DOCKER_INFLUXDB_INIT_ORG: homeassistant
+      DOCKER_INFLUXDB_INIT_BUCKET: homeassistant
+      DOCKER_INFLUXDB_INIT_RETENTION: 90d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    ports:
+      - 127.0.0.1:8086:8086
+
+  # https://hub.docker.com/r/grafana/grafana
+  grafana:
+    image: grafana/grafana:11.4.0@sha256:d8ea37798ccc41061a62ab080f2676dda6bf7815558499f901bdb0f533a456fb
+    volumes:
+      - grafana:/var/lib/grafana
+    ports:
+      - 3000:3000/tcp
+
+  # https://fleet.linuxserver.io/image?name=linuxserver/duplicati
+  # https://docs.linuxserver.io/images/docker-duplicati/
+  # https://hub.docker.com/r/linuxserver/duplicati
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:2.1.0@sha256:bc6264d201eefcd2ee9b2dfdac2d4c6937fdbb885e7036b5a01878ff9da159e3
+    environment:
+      PUID: "0"
+      PGID: "0"
+      CLI_ARGS: --webservice-interface=any
+    ports:
+      - "8200:8200/tcp"
+    tmpfs:
+      - /tmp
+    volumes:
+      - duplicati:/config
+      - config:/volumes/config
+      - influxdb-data:/volumes/influxdb-data
+      - influxdb-config:/volumes/influxdb-config
+      - grafana:/volumes/grafana
+      - zigbee2mqtt:/volumes/zigbee2mqtt
+      - frigate-media:/volumes/frigate-media
+      - tailscale:/volumes/tailscale
+      - netdatalib:/volumes/netdatalib
+      - esphome:/volumes/esphome
+
+  # https://docs.frigate.video/frigate/installation
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:0.14.1@sha256:22e3d0b486df52c3d669682254c2b1bf4205fa6ad8bd8f8c9f7fe76b1517005d
+    privileged: true
+    ports:
+      - "8971:8971"
+      - "127.0.0.1:5000:5000" # Internal unauthenticated access. Expose carefully.
+      - "8554:8554" # RTSP feeds
+      - "8555:8555/tcp" # WebRTC over tcp
+      - "8555:8555/udp" # WebRTC over udp
+    volumes:
+      - frigate-config:/config
+      - frigate-media:/media/frigate
+    tmpfs:
+      - /tmp/cache
+    shm_size: 2048M
+    environment:
+      FRIGATE_RTSP_PASSWORD: "balena"
+      CONFIG_FILE: "/config/config.yml"
+    labels:
+      io.balena.features.kernel-modules: 1
+    devices:
+      - /dev/dri:/dev/dri
+
+  # https://github.com/home-assistant-libs/python-matter-server/blob/main/docs/docker.md
+  matter-server:
+    image: ghcr.io/home-assistant-libs/python-matter-server:7.0.0
+    # Required for mDNS to work correctly
+    network_mode: host
+    security_opt:
+      # Required for Bluetooth via D-Bus
+      - apparmor:unconfined
+    volumes:
+      - matter-server:/data/
+    environment:
+      # Required for Bluetooth via D-Bus
+      DBUS_SYSTEM_BUS_ADDRESS: unix:path=/host/run/dbus/system_bus_socket
+    labels:
+      # Required for Bluetooth via D-Bus
+      io.balena.features.dbus: '1'
+    # If you adjust command line, make sure to pass the default CMD arguments too:
+    #command: --storage-path /data --paa-root-cert-dir /data/credentials --bluetooth-adapter 0
+
+  # https://hub.docker.com/r/mrlt8/wyze-bridge/tags
+  wyze-bridge:
+    image: mrlt8/wyze-bridge:2.10.3@sha256:af2d638a6d6d52e15ddcfb711e5b905e484b1f519986ad33b9be562b6277b987
+    ports:
+      # - 1935:1935 # RTMP
+      # - 8554:8554 # RTSP
+      # - 8888:8888 # HLS
+      # - 8889:8889 # WebRTC
+      # - 8189:8189/udp # WebRTC/ICE
+      - 5001:5000 # WEB-UI
+    volumes:
+      - wyze-tokens:/tokens
   
   pihole:
     build: pihole
@@ -90,17 +244,14 @@ services:
   # https://tailscale.com/kb/1241/tailscale-up
   # https://tailscale.com/kb/1242/tailscale-serve
   # https://tailscale.com/kb/1311/tailscale-funnel
-
   tailscale:
-    image: tailscale/tailscale:v1.76.6@sha256:da35f0fbeb3037754049e3b079cb30c58c140576a50b54be107c0ff6ad0ec0e9
-    restart: unless-stopped
+    image: tailscale/tailscale:v1.78.3@sha256:9d4c17a8451e2d1282c22aee1f08d28dc106979c39c7b5a35ec6313d4682a43e
     environment:
       TS_STATE_DIR: /var/lib/tailscale
       TS_SOCKET: /var/run/tailscale/tailscaled.sock
       TS_USERSPACE: false
       TS_AUTH_ONCE: false
-      TS_HOSTNAME: pi-hole
-      TS_EXTRA_ARGS: --accept-dns=false --reset
+      TS_HOSTNAME: homeassistant
     network_mode: host
     cap_add:
       - NET_ADMIN
@@ -123,3 +274,23 @@ services:
         mkdir -p /dev/net
         [ ! -c /dev/net/tun ] && mknod /dev/net/tun c 10 200
         /usr/local/bin/containerboot
+
+  netdata:
+    image: netdata/netdata:v2.1.0@sha256:fc0f7e7c6f042828f9e7370b9e6f41da30b328009ac5ab977b5578e806e83062
+    privileged: true
+    network_mode: host
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+    labels:
+      io.balena.features.balena-socket: 1
+      io.balena.features.procfs: 1
+      io.balena.features.supervisor-api: 1
+      io.balena.features.sysfs: 1
+    volumes:
+      - netdatalib:/var/lib/netdata
+      - netdatacache:/var/cache/netdata
+    environment:
+      DOCKER_HOST: "/var/run/balena.sock"
+      PGID: "991" # ls -nd /var/run/balena.sock | awk '{print $4}'
