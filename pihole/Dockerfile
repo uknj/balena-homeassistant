@@ -1,5 +1,5 @@
 # https://hub.docker.com/r/pihole/pihole/tags
-FROM pihole/pihole:2024.01.0@sha256:d095ec4982b6d9d6ccd95e7cf9c6c731d073d3ec4705de1d3cc1bfa4f3633e03
+FROM pihole/pihole:2024.07.0@sha256:0def896a596e8d45780b6359dbf82fc8c75ef05b97e095452e67a0a4ccc95377
 
 ENV DEBIAN_FRONTEND noninteractive
 
